@@ -1,51 +1,51 @@
-# 高并发领券：从快速失败到最终发放
+# High-Concurrency Redemption: Fast Rejection and Final Issuance
 
-## 正常路径
+## The normal path
 
 ```mermaid
 sequenceDiagram
-  participant U as 用户
-  participant E as 领券服务
+  participant U as Customer
+  participant E as Redemption service
   participant R as Redis
   participant DB as MySQL
-  U->>E: 领取模板 T
-  E->>R: Lua：检查活动、库存和个人上限；预占
-  alt Redis 拒绝
-    R-->>E: 售罄或超限
-    E-->>U: 快速失败
-  else 预占成功
-    R-->>E: 预占凭据
-    E->>DB: 事务：条件扣库存、插入用户券
-    alt 数据库确认提交
-      DB-->>E: 成功
-      E-->>U: 领取成功
-    else 数据库确认回滚
-      DB-->>E: 失败
-      E->>R: 按凭据幂等释放本次预占
-      E-->>U: 领取失败，可重试
+  U->>E: Redeem template T
+  E->>R: Lua checks campaign, stock, and user limit; reserves capacity
+  alt Redis rejects
+    R-->>E: Sold out or limit reached
+    E-->>U: Reject quickly
+  else Reservation succeeds
+    R-->>E: Reservation token
+    E->>DB: Transaction: conditional stock update and user coupon insert
+    alt Commit confirmed
+      DB-->>E: Success
+      E-->>U: Coupon issued
+    else Rollback confirmed
+      DB-->>E: Failure
+      E->>R: Release this reservation idempotently by token
+      E-->>U: Failed; retry is possible
     end
   end
 ```
 
-## 为什么数据库还要再次校验库存
+## Why the database checks stock again
 
-Redis 负责挡住大量无效请求，但缓存可能滞后、丢失或因故障与数据库不一致。数据库的条件更新是持久化库存的最后一道约束：只有剩余库存足够才扣减。库存扣减和用户券插入应在同一数据库事务中，防止只扣库存或只发券。
+Redis filters invalid requests quickly, but its state can lag or diverge from the database after failures. The conditional database update is the durable stock constraint: it decrements stock only while sufficient stock remains. The stock update and user coupon insert belong in one database transaction so that neither can commit alone.
 
-## 失败分三类
+## Three distinct outcomes
 
-| 情况 | Redis 预占 | 数据库写入 | 处理 |
+| Outcome | Redis reservation | Database write | Next step |
 | --- | --- | --- | --- |
-| 正常成功 | 保留 | 确认提交 | 返回成功 |
-| 确认回滚 | 已占用 | 确认未提交 | 使用唯一凭据幂等释放 |
-| 结果未知 | 已占用 | 可能提交 | 保留凭据，查询最终记录并对账 |
+| Confirmed success | Retained | Committed | Return success |
+| Confirmed rollback | Occupied | Not committed | Release by unique token, idempotently |
+| Unknown commit outcome | Occupied | May have committed | Keep evidence, inspect final records, and reconcile |
 
-未知结果不能简单地“碰到异常就加回库存”。例如数据库提交后网络超时，调用方看到异常，但用户券实际上已经存在。直接归还 Redis 预占可能再次放行一个用户。
+An exception alone does not prove rollback. For example, a timeout after a successful database commit may look like a failed request to the caller. Releasing stock immediately could allow another coupon to be issued.
 
-## 需要守住的不变量
+## Invariants
 
-- 已发券数量不能超过初始库存。
-- 同一用户的成功领取数不能超过个人上限。
-- 对一个确定失败的请求，释放操作重复执行也不能多归还库存。
-- 对账完成后：初始数据库库存 = 已发用户券数 + 当前数据库库存。
+- Issued coupons must never exceed initial stock.
+- A user's successful redemptions must not exceed the per-user limit.
+- Retrying compensation for a confirmed failure must not restore stock twice.
+- After reconciliation: initial database stock = issued coupon count + current database stock.
 
-仓库中的[独立演示](../demo/server.py)只展示这些状态变化。它用一个进程内锁模拟原子预占，刻意没有模拟分布式事务、进程崩溃、MQ 重复投递或 Redis 主从切换；这些需要在真实系统里分别验证。
+The [standalone demo](../demo/server.py) illustrates these state transitions. A process-local lock models atomic reservation; it deliberately does not model distributed transactions, process crashes, duplicate MQ delivery, or Redis failover. Those require separate integration tests against the real system.

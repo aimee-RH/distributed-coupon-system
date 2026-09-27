@@ -1,54 +1,54 @@
-# 系统架构与设计取舍
+# Architecture and Design Trade-offs
 
-## 核心对象
+## Domain objects
 
-| 对象 | 职责 | 关键约束 |
+| Object | Purpose | Critical constraint |
 | --- | --- | --- |
-| 优惠券模板 | 定义商家、规则、发行库存和活动时间 | 库存不得为负，商家只能管理自己的模板 |
-| 用户优惠券 | 记录用户实际持有的券及状态 | 不能违反每人领取上限，同一张券不能被两个订单消费 |
-| 分发任务 | 记录名单、执行时间、进度及失败行 | 重试不能重复发券，任务完成需与到账结果核对 |
-| 结算记录 | 关联用户券、订单和支付状态 | 锁定、核销、退款均需验证合法状态转换 |
+| Coupon template | Defines merchant, rules, issuance stock, and campaign window | Stock cannot go below zero; merchants may manage only their own templates |
+| User coupon | Represents a coupon actually held by a user | Per-user limits apply; one coupon cannot pay for two orders |
+| Distribution task | Tracks the audience, schedule, progress, and failed rows | Retrying must not issue duplicates; completion must be reconciled with delivery |
+| Settlement record | Connects a user coupon to an order and payment state | Reserve, consume, and refund require valid state transitions |
 
-## 六类服务如何协作
+## Service boundaries
 
-后管负责模板和批量任务；分发负责读取名单并批量发券；引擎负责用户查询、领券、提醒与券状态变更；结算负责订单选券和金额计算；搜索负责活动检索；网关是外部入口。RocketMQ 把耗时的发券和提醒与前台请求解耦，Redis 承担热点读和快速校验，MySQL 持久化最终发放记录。
+Merchant Admin owns templates and bulk tasks. Distribution reads recipient lists and issues coupons in batches. Engine handles customer lookup, redemption, reminders, and coupon state changes. Settlement computes eligible coupons and discounts. Search supports campaign discovery, and Gateway is the external entry point. RocketMQ decouples time-consuming distribution and reminders from foreground requests; Redis serves hot reads and fast checks; MySQL persists the final issuance records.
 
 ```mermaid
 sequenceDiagram
-  participant M as 商家
-  participant A as 后管
-  participant Q as MQ
-  participant D as 分发
+  participant M as Merchant
+  participant A as Merchant Admin
+  participant Q as RocketMQ
+  participant D as Distribution
   participant R as Redis
   participant DB as MySQL
-  M->>A: 创建模板、提交名单和执行时间
-  A->>DB: 保存模板与任务
-  A->>Q: 到时触发分发
-  Q->>D: 消费任务
-  loop 流式读取每行
-    D->>R: 检查库存并暂存待发用户
+  M->>A: Create template and scheduled recipient task
+  A->>DB: Save template and task
+  A->>Q: Trigger task at scheduled time
+  Q->>D: Deliver task message
+  loop Stream recipient rows
+    D->>R: Check stock and stage recipients
   end
-  D->>DB: 按批次扣库存、插入用户券
-  D->>R: 更新用户券列表
-  D->>DB: 记录失败行与任务结果
+  D->>DB: Decrement stock and insert coupons in batches
+  D->>R: Refresh user coupon lists
+  D->>DB: Record failed rows and task outcome
 ```
 
-## 两条领券路径
+## Two ways to issue coupons
 
-**批量分发**由商家任务驱动，目标是总吞吐和可恢复性。文件应逐行读取，按批次写入，重复消费由业务唯一约束与幂等处理兜底。只保存“处理到第几行”不等于该行已经到账；重启后要结合任务状态和已发券记录核对。
+**Bulk distribution** begins with a merchant task. Throughput and recoverability matter most: stream the input, write bounded batches, and use a business uniqueness constraint plus idempotent handling when messages are retried. “Processed through row N” does not prove every preceding coupon was delivered; compare task state with committed issuance records after a restart.
 
-**用户主动领取**由用户请求驱动，目标是快速拒绝售罄与超限请求。Redis Lua 在缓存侧完成检查与预占，数据库事务进行条件扣库存和插入用户券。两个存储之间没有天然的原子提交，因此必须处理失败补偿与未知结果。详见[领券设计](redeem.md)。
+**Customer redemption** begins with an interactive request. Redis Lua can reject sold-out or over-limit attempts quickly and reserve capacity. A database transaction conditionally decrements durable stock and inserts a user coupon. The two stores do not share an atomic commit, so confirmed failures need compensation and uncertain outcomes need reconciliation. See [redemption design](redeem.md).
 
-## 数据分片为什么这样选
+## Why the sharding keys differ
 
-模板主要由商家创建和管理，按 `shop_number` 路由有利于商家维度操作；用户券主要按用户查询和结算，按 `user_id` 路由有利于用户维度访问。两类数据的分片键不同，跨商家或跨用户的查询需要拆分或汇总。分库分表分散存储与普通读写压力，但单个热门模板的库存记录仍会成为并发热点。
+Template management is usually merchant-scoped, so routing templates by `shop_number` supports merchant operations. Coupon lookup and checkout are usually user-scoped, so routing user coupons by `user_id` supports those reads. Queries across merchants or users require routing to multiple shards and merging results. Sharding spreads storage and ordinary traffic, but one popular template's stock row can still become a write hotspot.
 
-## 结算与使用
+## Checkout and coupon usage
 
-结算服务从用户券集合读取候选券，用 Redis Pipeline 批量查询模板，再按订单金额、商品范围和优惠规则计算可用券。Pipeline 主要减少往返等待。计算结果只是预览；用户提交订单时，还需在引擎中锁券，支付成功后核销，取消或退款时按业务规则处理状态。相同支付通知或退款通知可能重复到达，状态转换应具备幂等性。
+Settlement reads candidate user coupons and uses Redis Pipeline to fetch template details in batches. It checks order amount, eligible products, and discount rules. Pipelining mainly reduces network round trips. This calculation is a preview; order submission must reserve the selected coupon, payment success consumes it, and cancellation or refund follows the applicable state transition. Repeated payment or refund notifications must not repeat their effects.
 
-## 面试官常问的边界
+## Boundaries worth discussing
 
-- **布隆过滤器能否证明模板存在？** 只能快速判定“肯定不存在”或“可能存在”；仍需要缓存或数据库确认。
-- **用了 MQ 就能保证恰好一次吗？** 消息可能重复或延迟；最终发券仍依赖业务键、数据库约束和对账。
-- **换成红锁能解决超卖吗？** 锁不代替数据库条件扣减。先说明当前故障模型与部署拓扑，再决定是否需要额外锁机制。
+- **Can a Bloom filter prove that a template exists?** It can reject a definite non-member, but a positive result still needs confirmation from cache or database.
+- **Does a message queue guarantee exactly-once issuance?** Messages can be delayed or repeated. Business keys, database constraints, and reconciliation protect the final result.
+- **Would Redlock prevent overselling?** A lock does not replace a conditional database stock update. Start with the actual failure model and deployment topology before adding another locking mechanism.

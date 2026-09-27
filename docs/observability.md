@@ -1,37 +1,37 @@
-# 监控与故障演示
+# Observability and Failure Demo
 
-监控的目标是回答三个问题：用户是否成功领取、后台是否已经完成发券、库存账是否仍然正确。只看 HTTP 延迟，无法回答后两项。
+Monitoring should answer three questions: Did the request succeed? Has the coupon actually been issued? Does the inventory ledger still balance? HTTP latency alone cannot answer the last two.
 
-## 从请求到业务结果
+## From requests to business outcomes
 
-| 信号 | 查询或指标 | 用途 |
+| Signal | Metric | What it tells us |
 | --- | --- | --- |
-| 请求结果 | `coupon_redeem_total{result=...}` | 分开看成功、售罄、重复领取、确认回滚 |
-| 请求耗时 | `coupon_redeem_duration_seconds` | 观察同步路径的 P95/P99 |
-| 数据库库存 | `coupon_db_stock` | 检查最终库存是否耗尽 |
-| 缓存库存 | `coupon_cache_stock` | 发现缓存与数据库偏差 |
-| 已发券数量 | `coupon_issued_count` | 观察真实到账数量 |
-| 守恒差额 | `coupon_conservation_gap` | `初始库存 - 数据库库存 - 已发券数`，应为 0 |
-| 未确认预占 | `coupon_pending_count` | 发现长期占用的请求 |
+| Redemption outcome | `coupon_redeem_total{result=...}` | Separate successful issuance, sold-out responses, duplicates, and confirmed rollbacks |
+| Request duration | `coupon_redeem_duration_seconds` | P95/P99 of the synchronous demo path |
+| Database stock | `coupon_db_stock` | Durable remaining inventory in the model |
+| Cache stock | `coupon_cache_stock` | Potential divergence from database inventory |
+| Issued count | `coupon_issued_count` | Coupons actually issued in the model |
+| Conservation gap | `coupon_conservation_gap` | `initial stock - database stock - issued count`; expected value: 0 |
+| Pending reservations | `coupon_pending_count` | Reservations left unresolved for too long |
 
-演示指标只使用 `result` 这样的低基数标签。真实系统的 `user_id`、订单号、模板 ID 应进入日志或 trace 上下文，不适合作为 Prometheus 标签。
+The demo uses only low-cardinality labels such as `result`. In a real service, user IDs, order IDs, and template IDs belong in logs or trace context rather than Prometheus labels.
 
-## 现场演示顺序
+## Live interview walkthrough
 
-1. 启动 `docker compose up`，打开 Grafana 的 **Coupon Reservation Demo** 面板。
-2. 对用户 `alice` 发起 `fail_db=true` 请求；应看到 `rolled_back` 增加，两个库存不减少，守恒差额仍为 0。
-3. 同一用户再次请求；应看到 `issued` 增加，数据库和缓存库存各减少 1。
-4. 再次请求该用户；应看到 `duplicate` 增加，不再扣库存。
-5. 讲解扩展到真实系统时，怎样关联 trace ID、数据库事务、Redis Lua 和 MQ 消费结果。
+1. Run `docker compose up` and open the **Coupon Reservation Demo** dashboard in Grafana.
+2. Send a request for `alice` with `fail_db=true`. The `rolled_back` count should rise, neither stock value should decrease, and the conservation gap should remain zero.
+3. Retry for the same user. The `issued` count should rise, and both stock values should decrease by one.
+4. Send the same request again. The `duplicate` count should rise without another stock decrement.
+5. Explain how the real system would correlate a trace ID across HTTP, Redis Lua, the database transaction, and MQ consumption.
 
-这段演示验证的是**失败状态转换与可观测性**。模型用内存模拟两个存储，不用于真实吞吐压测，也没有意图制造不守恒的状态。告警规则中的库存差额用于真实系统接入后的异常检测。
+This walkthrough tests **failure-state transitions and visibility**. Two in-memory values stand in for the stores, so it is not a throughput benchmark or a distributed failure test. The inventory-gap alert becomes useful when a real reconciliation job supplies the metric.
 
-## 真实系统下一步接入
+## Connecting a real system
 
-- 在领券接口、事务完成回调和 MQ 消费者记录相同业务请求 ID，链路追踪跨越 HTTP 与消息消费。
-- 区分“请求受理时间”和“用户券入库时间”；异步请求快并不代表到账快。
-- 增加任务积压数、最老未消费消息年龄、失败队列数和每批发券耗时。
-- 用定时对账计算数据库库存与已发券数的差额；对账任务必须有明确的统计时间点和活动范围。
-- 告警先围绕用户影响和业务正确性：持续对账差额、积压持续增长、成功率异常下降。单次拒绝或正常售罄不应报警。
+- Propagate one business request ID through the redemption endpoint, transaction completion callback, and MQ consumer.
+- Measure request acceptance time separately from user coupon commit time; a quick asynchronous response does not prove quick delivery.
+- Track queued tasks, age of the oldest unconsumed message, failed messages, and duration per distribution batch.
+- Run periodic reconciliation between database stock and issued coupons, with an explicit campaign scope and observation time.
+- Alert first on customer impact and correctness: sustained inventory gaps, growing backlog, or a drop in successful issuance. Normal sold-out responses need no alert.
 
-当前演示面板与告警配置位于 [`monitoring/`](../monitoring/)。Prometheus 使用标准文本指标格式；Grafana 在启动时读取数据源和面板配置。
+The demo dashboard and alert definitions are under [`monitoring/`](../monitoring/). Prometheus scrapes the service's text-format metrics, and Grafana loads the data source and dashboard at startup.
