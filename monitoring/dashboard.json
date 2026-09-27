@@ -1,0 +1,47 @@
+{
+  "uid": "coupon-reservation-demo",
+  "title": "Coupon Reservation Demo",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "Redeem outcomes / minute",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (result) (increase(coupon_redeem_total[1m]))", "legendFormat": "{{result}}", "refId": "A"}]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Stock and issued coupons",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "coupon_db_stock", "legendFormat": "DB stock", "refId": "A"},
+        {"expr": "coupon_cache_stock", "legendFormat": "Cache stock", "refId": "B"},
+        {"expr": "coupon_issued_count", "legendFormat": "Issued", "refId": "C"}
+      ]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Inventory conservation gap",
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "coupon_conservation_gap", "refId": "A"}]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Pending reservations",
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "coupon_pending_count", "refId": "A"}]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Redeem P95 / P99 (seconds)",
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(coupon_redeem_duration_seconds_bucket[5m])))", "legendFormat": "P95", "refId": "A"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(coupon_redeem_duration_seconds_bucket[5m])))", "legendFormat": "P99", "refId": "B"}
+      ]
+    }
+  ]
+}

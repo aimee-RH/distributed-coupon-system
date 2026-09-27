@@ -1,0 +1,37 @@
+services:
+  demo:
+    image: python:3.12-alpine
+    working_dir: /app
+    command: python demo/server.py
+    environment:
+      DEMO_STOCK: "10"
+      LISTEN_HOST: 0.0.0.0
+    volumes:
+      - ./:/app:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command: --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - demo
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana:/etc/grafana/provisioning:ro
+      - ./monitoring/dashboard.json:/var/lib/grafana/dashboards/coupon.json:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
