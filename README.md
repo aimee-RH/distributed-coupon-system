@@ -1,53 +1,52 @@
-# Distributed Coupon System: Architecture and Failure Demo
+# Distributed Coupon System: Architecture, Failure Lab, and Observability
 
-This is an **independent interview portfolio project**. Original diagrams, design notes, and a small runnable model show how I reason about coupon templates, bulk distribution, high-concurrency redemption, checkout, and observability. The demo is not a complete coupon platform or a copy of the private learning project's source code.
+An independent, interview-ready study of a distributed coupon platform. The diagrams explain the larger system; the runnable lab isolates its hardest interactive path: **two redemption instances sharing Redis and MySQL**. It does not contain source code from the private learning project, and the lab is not a complete coupon platform.
 
-## Three-minute tour
+## Start with the evidence
 
-1. [Architecture](docs/architecture.md): service boundaries, two distribution paths, and sharding choices.
-2. [Redemption design](docs/redeem.md): cache reservation, database commit, confirmed rollback, and uncertain outcomes.
-3. [Observability](docs/observability.md): accepted requests versus delivered coupons, business invariants, and a failure demo.
+| Design focus | Where to look | What you can verify |
+| --- | --- | --- |
+| Module responsibilities | [Architecture map](docs/architecture.md) | Ownership of templates, bulk tasks, redemption, reminders, and checkout |
+| Cross-instance stock safety | [Redemption design](docs/redeem.md), [Lua reservation](demo/reserve.lua), [database schema](demo/init.sql) | Redis fast rejection plus a conditional database stock update and a unique issued-coupon record |
+| Failure recovery | [Failure experiment](docs/experiment.md) | Compensation only after confirmed rollback; the same request resolves across instances after a committed but uncertain response |
+| Operational visibility | [Observability](docs/observability.md), [dashboard](monitoring/dashboard.json) | Outcome rates, stock, issuance, latency, and reconciliation gaps |
 
-```mermaid
+## Run the two-instance experiment
+
+Requirements: Docker Compose and Python 3. Use a fresh Compose volume for the deterministic verification script.
+
+~~~sh
+docker compose up -d --build
+python3 demo/verify.py
+~~~
+
+The script exercises rollback and retry, an uncertain response after commit, duplicate-user rejection, and 50 concurrent requests split between both instances. It expects **18 issued and 32 sold-out** from the concurrent phase, following two earlier successful issuances. The final state must be 20 issued, zero stock in both stores, and zero reconciliation gaps. See the [scenario-by-scenario walkthrough](docs/experiment.md).
+
+Open [Grafana](http://127.0.0.1:3000) (admin / admin) for the **Coupon Redemption: Two Instances** dashboard, or [Prometheus](http://127.0.0.1:9090). Instance A listens on 127.0.0.1:8080; instance B on 127.0.0.1:28081. The demo credentials and ports are local-only. To repeat from a clean database and Redis state:
+
+~~~sh
+docker compose down -v
+docker compose up -d --build
+python3 demo/verify.py
+~~~
+
+## System at a glance
+
+~~~mermaid
 flowchart LR
-  Merchant --> Admin[Templates and bulk campaigns]
+  Merchant --> Admin[Merchant Admin]
   Admin --> MQ[RocketMQ]
-  MQ --> Distribution[Stream input and issue in batches]
-  Customer --> Gateway
-  Gateway --> Engine[Browse, redeem, reserve, and consume]
-  Gateway --> Checkout[Eligibility and discount calculation]
-  Engine --> Redis
-  Distribution --> Redis
+  MQ --> Distribution[Distribution workers]
+  Customer --> Gateway[Gateway]
+  Gateway --> Engine[Coupon Engine]
+  Gateway --> Settlement[Settlement]
+  Engine --> Redis[(Redis)]
+  Distribution --> MySQL[(MySQL)]
   Engine --> MySQL
-  Distribution --> MySQL
-  Checkout --> Redis
-```
+  Settlement --> Redis
+  Settlement --> MySQL
+~~~
 
-## Reproduce a failed reservation in five minutes
+The diagram is the **target-system design**, based on the project analysis. The runnable lab implements only the redemption slice with Redis, MySQL, two HTTP instances, Prometheus, and Grafana. Bulk distribution, RocketMQ, scheduled reminders, sharding, and checkout are explained as design cases rather than presented as running features.
 
-Only Python 3 is required. The demo models a cache reservation and a final database write **in memory**. It does not reproduce real Redis, MySQL, or RocketMQ performance or failure behavior.
-
-```sh
-python3 -m unittest discover -s demo -p 'test_*.py'
-python3 demo/server.py
-```
-
-In another terminal:
-
-```sh
-curl -s -X POST http://localhost:8080/redeem -H 'Content-Type: application/json' -d '{"user_id":"alice","fail_db":true}'
-curl -s http://localhost:8080/state
-curl -s -X POST http://localhost:8080/redeem -H 'Content-Type: application/json' -d '{"user_id":"alice"}'
-curl -s http://localhost:8080/state
-curl -s http://localhost:8080/metrics
-```
-
-The first request returns `rolled_back`. The same user can then redeem successfully, while the inventory conservation gap remains zero. To view the dashboard, run `docker compose up` instead of starting Python directly, then open [Grafana](http://localhost:3000) (local demo login: `admin/admin`) or [Prometheus](http://localhost:9090). These credentials and ports are for a loopback-only demo; do not expose them to the internet.
-
-## What this project demonstrates
-
-- The value of the private project lies in its design decisions and failure analysis. This repository contains none of its source files, images, configuration, or production data.
-- The model checks a narrow set of state transitions and metric definitions. It does not establish multi-node consistency, reliable message delivery, or production throughput.
-- Any performance claim needs the machine, dataset, test duration, success criteria, P95/P99, errors, and dropped requests. Fast HTTP acceptance alone does not establish fast asynchronous delivery.
-
-
+This repository makes **no throughput claim**. A credible benchmark would publish machine specifications, workload and data shape, warm-up, test duration, offered and completed request rates, P95/P99, error counts, and the final inventory reconciliation result.

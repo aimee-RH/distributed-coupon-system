@@ -2,16 +2,23 @@ groups:
   - name: coupon-business
     rules:
       - alert: CouponInventoryMismatch
-        expr: coupon_conservation_gap != 0
+        expr: max(coupon_conservation_gap) != 0
         for: 1m
         labels:
           severity: critical
         annotations:
           summary: Coupon inventory conservation differs from zero
       - alert: CouponReservationStuck
-        expr: coupon_pending_count > 0
+        expr: max(coupon_reservation_gap) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: Coupon reservations have remained pending
+          summary: Redis reservations have remained ahead of issued coupons
+      - alert: CouponInstanceUnavailable
+        expr: up{job="coupon-demo"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A redemption demo instance is unavailable

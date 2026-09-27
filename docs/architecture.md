@@ -1,54 +1,93 @@
-# Architecture and Design Trade-offs
+# Architecture: Four Workflows and Their Failure Boundaries
 
-## Domain objects
+The target platform separates merchant configuration, background issuance, interactive redemption, and checkout. Each workflow has a different success definition. A task accepted by the admin API is not a coupon delivered to a user; a Redis reservation is not a database issuance; a discount preview is not a consumed coupon.
 
-| Object | Purpose | Critical constraint |
-| --- | --- | --- |
-| Coupon template | Defines merchant, rules, issuance stock, and campaign window | Stock cannot go below zero; merchants may manage only their own templates |
-| User coupon | Represents a coupon actually held by a user | Per-user limits apply; one coupon cannot pay for two orders |
-| Distribution task | Tracks the audience, schedule, progress, and failed rows | Retrying must not issue duplicates; completion must be reconciled with delivery |
-| Settlement record | Connects a user coupon to an order and payment state | Reserve, consume, and refund require valid state transitions |
+## Ownership map
 
-## Service boundaries
+| Module | Entry point in the studied project | Owns | Critical boundary |
+| --- | --- | --- | --- |
+| Merchant Admin | CouponTemplateController#createCouponTemplate | Template creation and campaign configuration | Duplicate-submit protection, validation, audit log, merchant-scoped persistence |
+| Merchant Admin | CouponTaskController#createCouponTask | Recipient file and scheduled distribution task | Stream large Excel inputs; persist the task before dispatch |
+| Distribution | CouponTaskSendExecuteConsumer#onMessage and CouponTaskExecuteConsumer#onMessage | Background batch issuance | Resume from progress, control stock, and make retries idempotent |
+| Engine | CouponTemplateController#findCouponTemplate | Template lookup | Bloom filter, empty-value cache, and lock address different cache failure modes |
+| Engine | UserCouponController#redeemUserCoupon | Interactive redemption | Redis fast rejection followed by durable stock and issuance transaction |
+| Engine | CouponTemplateRemindController#createCouponRemind | Reservation reminder scheduling | Delayed delivery, cancellation check, and retry visibility |
+| Engine | UserCouponController#createPaymentRecord, #processPayment, #processRefund | Coupon lifecycle around payment | Valid state transitions and repeated callback protection |
+| Settlement | CouponQueryController#listQueryCoupons and #listQueryCouponsBySync | Eligibility and discount preview | Correct rules and measured overhead of parallel work |
 
-Merchant Admin owns templates and bulk tasks. Distribution reads recipient lists and issues coupons in batches. Engine handles customer lookup, redemption, reminders, and coupon state changes. Settlement computes eligible coupons and discounts. Search supports campaign discovery, and Gateway is the external entry point. RocketMQ decouples time-consuming distribution and reminders from foreground requests; Redis serves hot reads and fast checks; MySQL persists the final issuance records.
+These entry points are a guide for explaining the private learning project. The runnable code in this repository implements only the redemption row.
 
-```mermaid
+## System map
+
+~~~mermaid
+flowchart LR
+  Merchant --> Admin[Merchant Admin]
+  Admin --> MQ[RocketMQ]
+  MQ --> Distribution[Distribution workers]
+  Customer --> Gateway[Gateway]
+  Gateway --> Engine[Coupon Engine]
+  Gateway --> Settlement[Settlement]
+  Engine --> Redis[(Redis)]
+  Distribution --> Redis
+  Engine --> MySQL[(MySQL)]
+  Distribution --> MySQL
+  Settlement --> Redis
+  Settlement --> MySQL
+~~~
+
+Redis holds hot lookup and reservation state. MySQL holds durable templates, task records, stock, issued coupons, and payment state. RocketMQ separates slow distribution and reminder work from foreground requests. ShardingSphere changes where records live, but does not itself make a hot stock row or cross-shard query cheap.
+
+## Workflow 1: Merchant creates a template or bulk task
+
+A template is validated through a handler chain so rules can be expressed in small, ordered checks. Duplicate-submit protection reduces accidental repeated creation, while a database uniqueness rule is still needed when the business key must be unique. An operation log records who changed campaign settings and when. Merchant-oriented sharding makes merchant administration efficient; it does not automatically optimize user-oriented queries.
+
+For bulk push, stream the Excel file instead of loading every recipient into memory. Parsing and row counting can run outside the HTTP request, but the UI should show task state and distinguish **accepted**, **validated**, **published**, and **issued**. A scheduled task scans for due work and publishes a message. The point at which the task is durably stored matters: an API response must not promise delivery merely because the task row was saved.
+
+## Workflow 2: Distribute to a large audience
+
+~~~mermaid
 sequenceDiagram
-  participant M as Merchant
   participant A as Merchant Admin
   participant Q as RocketMQ
-  participant D as Distribution
-  participant R as Redis
+  participant D as Distribution worker
   participant DB as MySQL
-  M->>A: Create template and scheduled recipient task
-  A->>DB: Save template and task
-  A->>Q: Trigger task at scheduled time
+  A->>DB: Save task and file reference
+  A->>Q: Publish due task
   Q->>D: Deliver task message
-  loop Stream recipient rows
-    D->>R: Check stock and stage recipients
+  loop Bounded recipient batch
+    D->>DB: Check stock and insert issued coupons
+    D->>DB: Record progress and failures
   end
-  D->>DB: Decrement stock and insert coupons in batches
-  D->>R: Refresh user coupon lists
-  D->>DB: Record failed rows and task outcome
-```
+  D->>DB: Reconcile committed coupons and task outcome
+~~~
 
-## Two ways to issue coupons
+The interesting design question is **where to resume** after an interruption. A row checkpoint narrows the replay range, but it cannot prove all earlier writes committed. If the process dies between issuing a coupon and saving progress, replay will revisit that row. The database uniqueness key must make the second attempt harmless. If progress is saved first, the row could be skipped forever. Record failed recipients separately, then reconcile task totals against durable issuance records. A queue redelivery is normal; exactly-once delivery is not the assumption.
 
-**Bulk distribution** begins with a merchant task. Throughput and recoverability matter most: stream the input, write bounded batches, and use a business uniqueness constraint plus idempotent handling when messages are retried. “Processed through row N” does not prove every preceding coupon was delivered; compare task state with committed issuance records after a restart.
+A stock row remains a contention point even if user-coupon tables are sharded. A conditional stock update or row lock should be the final stock authority. Retry loops need a bounded strategy and visibility into failure counts rather than hiding repeated conflicts indefinitely.
 
-**Customer redemption** begins with an interactive request. Redis Lua can reject sold-out or over-limit attempts quickly and reserve capacity. A database transaction conditionally decrements durable stock and inserts a user coupon. The two stores do not share an atomic commit, so confirmed failures need compensation and uncertain outcomes need reconciliation. See [redemption design](redeem.md).
+## Workflow 3: Redeem under contention
 
-## Why the sharding keys differ
+The [redemption design](redeem.md) separates three outcomes: confirmed commit, confirmed rollback, and uncertain commit. Redis Lua gives fast atomic pre-reservation across instances. MySQL conditionally decrements stock and inserts a user coupon in one transaction. Token-matched compensation follows only a confirmed rollback. When the outcome is unknown, retry with the same request ID and inspect the durable record before releasing capacity.
 
-Template management is usually merchant-scoped, so routing templates by `shop_number` supports merchant operations. Coupon lookup and checkout are usually user-scoped, so routing user coupons by `user_id` supports those reads. Queries across merchants or users require routing to multiple shards and merging results. Sharding spreads storage and ordinary traffic, but one popular template's stock row can still become a write hotspot.
+The [two-instance experiment](experiment.md) demonstrates this boundary with real Redis and MySQL. It is the executable part of the portfolio.
 
-## Checkout and coupon usage
+## Workflow 4: Find, remind, and spend
 
-Settlement reads candidate user coupons and uses Redis Pipeline to fetch template details in batches. It checks order amount, eligible products, and discount rules. Pipelining mainly reduces network round trips. This calculation is a preview; order submission must reserve the selected coupon, payment success consumes it, and cancellation or refund follows the applicable state transition. Repeated payment or refund notifications must not repeat their effects.
+Template lookup needs three different cache defenses. A Bloom filter rejects definite non-members, an empty-value cache reduces repeated misses for absent IDs, and a lock limits concurrent rebuilds for an existing hot key. A Bloom-positive result is not proof of existence.
 
-## Boundaries worth discussing
+Scheduled reminders involve a delayed message, cancellation state, and retry path. A bitmap can compactly represent reservation flags; a cancellation filter can avoid many database reads, but false positives require careful treatment because suppressing a real reminder is a user-visible error. Message consumption should be traceable from schedule through attempted delivery.
 
-- **Can a Bloom filter prove that a template exists?** It can reject a definite non-member, but a positive result still needs confirmation from cache or database.
-- **Does a message queue guarantee exactly-once issuance?** Messages can be delayed or repeated. Business keys, database constraints, and reconciliation protect the final result.
-- **Would Redlock prevent overselling?** A lock does not replace a conditional database stock update. Start with the actual failure model and deployment topology before adding another locking mechanism.
+Settlement should return both eligible and ineligible coupons with reasons. Redis Pipeline reduces round trips for template reads, but the checkout calculation can still be cheaper synchronously when the per-coupon work is small and thread scheduling overhead dominates. Compare both approaches with the same dataset, warmed caches, completed requests, error rate, and latency distribution. The preview does not consume the coupon: order submission reserves it, payment success consumes it, and cancellation or refund follows an explicit state transition. Repeated payment notifications must not repeat that transition.
+
+## Data placement and interview trade-offs
+
+| Choice | Helps | Does not solve |
+| --- | --- | --- |
+| Shard templates by merchant | Merchant-scoped management queries | A hot campaign's stock row |
+| Shard user coupons by user | Wallet and checkout reads | Cross-user campaign counts without aggregation |
+| Pipeline template reads | Network round-trip cost | Incorrect eligibility rules or stale data |
+| Redis Lua reservation | Atomic fast-path stock check across instances | Durable issuance or Redis/MySQL atomicity |
+| Database uniqueness | Duplicate issuance on replay | Missing progress or reconciliation |
+| Distributed lock | Serializing a critical section when justified | Stock correctness without a database constraint |
+
+This is a design analysis, not a claim that every row in the table is implemented by the small lab. The [observability design](observability.md) shows which outcomes should be measured when these workflows run in a full system.

@@ -1,37 +1,29 @@
-# Observability and Failure Demo
+# Observability: Show Customer Outcomes and Inventory Truth
 
-Monitoring should answer three questions: Did the request succeed? Has the coupon actually been issued? Does the inventory ledger still balance? HTTP latency alone cannot answer the last two.
+Fast HTTP responses are not proof of issued coupons. The dashboard therefore puts request outcomes beside database stock, Redis stock, issuance count, and reconciliation gaps. Prometheus scrapes both redemption instances every five seconds; Grafana provisions the dashboard automatically.
 
-## From requests to business outcomes
+## Read the dashboard from left to right
 
-| Signal | Metric | What it tells us |
+| Panel / signal | Query or metric | Interpretation |
 | --- | --- | --- |
-| Redemption outcome | `coupon_redeem_total{result=...}` | Separate successful issuance, sold-out responses, duplicates, and confirmed rollbacks |
-| Request duration | `coupon_redeem_duration_seconds` | P95/P99 of the synchronous demo path |
-| Database stock | `coupon_db_stock` | Durable remaining inventory in the model |
-| Cache stock | `coupon_cache_stock` | Potential divergence from database inventory |
-| Issued count | `coupon_issued_count` | Coupons actually issued in the model |
-| Conservation gap | `coupon_conservation_gap` | `initial stock - database stock - issued count`; expected value: 0 |
-| Pending reservations | `coupon_pending_count` | Reservations left unresolved for too long |
+| Request outcomes | Sum the redemption counter by result across both instances | Separate issued, replayed, duplicate, sold-out, confirmed rollback, and unknown outcomes |
+| Stock and issued coupons | Database stock, cache stock, and issued count | Compare durable and fast-path views rather than relying on one store |
+| Conservation gap | Initial stock minus database stock minus issued count | A nonzero value contradicts the durable inventory ledger |
+| Reservation gap | Reservation count minus issued count | A lasting positive value suggests an uncompleted or unreconciled reservation |
+| Cache minus DB stock | Cache stock minus database stock | Shows Redis/MySQL divergence, including one that a request counter misses |
+| P95 / P99 | Redemption duration histogram | Synchronous endpoint latency, not asynchronous delivery latency |
+| Per-instance requests and scrape health | Instance-level counters and Prometheus up | Reveal an unavailable node or traffic concentrated on one node |
 
-The demo uses only low-cardinality labels such as `result`. In a real service, user IDs, order IDs, and template IDs belong in logs or trace context rather than Prometheus labels.
+The alerts fire on a sustained nonzero conservation gap, a positive reservation gap, or an unavailable instance. A transient reservation gap during a healthy in-flight request is expected, so the reservation alert waits five minutes. An alert cannot fix a mismatch; the next operational step is to inspect the request ID and durable issuance record before changing Redis stock.
 
-## Live interview walkthrough
+## Demonstration script
 
-1. Run `docker compose up` and open the **Coupon Reservation Demo** dashboard in Grafana.
-2. Send a request for `alice` with `fail_db=true`. The `rolled_back` count should rise, neither stock value should decrease, and the conservation gap should remain zero.
-3. Retry for the same user. The `issued` count should rise, and both stock values should decrease by one.
-4. Send the same request again. The `duplicate` count should rise without another stock decrement.
-5. Explain how the real system would correlate a trace ID across HTTP, Redis Lua, the database transaction, and MQ consumption.
+Run the [verification script](../demo/verify.py) on a fresh stack, then inspect the dashboard. The counter for rolled_back rises once, followed by successful issuance on the other instance. The unknown counter rises after an injected post-commit response fault, then replayed rises when that same request reaches the other instance. The concurrent phase consumes the remaining stock without a conservation gap. [The experiment guide](experiment.md) records the expected results.
 
-This walkthrough tests **failure-state transitions and visibility**. Two in-memory values stand in for the stores, so it is not a throughput benchmark or a distributed failure test. The inventory-gap alert becomes useful when a real reconciliation job supplies the metric.
+The fault named after_commit deliberately returns an uncertain response **after** a successful commit. It demonstrates why the caller cannot infer failure from a 503, but it does not reproduce a real network partition or server crash. The before_db fault demonstrates a confirmed rollback and token-matched compensation.
 
-## Connecting a real system
+## Extending the target system
 
-- Propagate one business request ID through the redemption endpoint, transaction completion callback, and MQ consumer.
-- Measure request acceptance time separately from user coupon commit time; a quick asynchronous response does not prove quick delivery.
-- Track queued tasks, age of the oldest unconsumed message, failed messages, and duration per distribution batch.
-- Run periodic reconciliation between database stock and issued coupons, with an explicit campaign scope and observation time.
-- Alert first on customer impact and correctness: sustained inventory gaps, growing backlog, or a drop in successful issuance. Normal sold-out responses need no alert.
+For bulk distribution, record input rows accepted, messages published, rows attempted, coupons committed, failed rows, and oldest pending task age separately. A row checkpoint is not a delivery counter. For reminders, record scheduled, consumed, suppressed, retried, and delivered outcomes. Across modules, propagate a business request ID in logs and traces; keep user IDs, request IDs, and campaign IDs **out of Prometheus labels** to avoid unbounded cardinality.
 
-The demo dashboard and alert definitions are under [`monitoring/`](../monitoring/). Prometheus scrapes the service's text-format metrics, and Grafana loads the data source and dashboard at startup.
+This lab uses a small SCAN-based reservation count, appropriate only for a tiny demo. A production reconciliation job should compute scoped counts from durable records and bounded Redis evidence without scanning an entire hot keyspace on each scrape. The [dashboard](../monitoring/dashboard.json) and [alert rules](../monitoring/alerts.yml) are reviewable source files.

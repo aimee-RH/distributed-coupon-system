@@ -1,15 +1,50 @@
 services:
-  demo:
-    image: python:3.12-alpine
-    working_dir: /app
-    command: python demo/server.py
+  mysql:
+    image: mysql:8.0.36
+    command: --default-authentication-plugin=mysql_native_password
     environment:
-      DEMO_STOCK: "10"
-      LISTEN_HOST: 0.0.0.0
+      MYSQL_ROOT_PASSWORD: local-root-only
+      MYSQL_DATABASE: coupon_demo
+      MYSQL_USER: coupon
+      MYSQL_PASSWORD: coupon-demo
     volumes:
-      - ./:/app:ro
+      - mysql-data:/var/lib/mysql
+      - ./demo/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7.2-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  demo-a: &demo
+    image: coupon-redemption-lab:local
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PASSWORD: coupon-demo
+      REDIS_HOST: redis
     ports:
       - "127.0.0.1:8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  demo-b:
+    <<: *demo
+    ports:
+      - "127.0.0.1:28081:8080"
 
   prometheus:
     image: prom/prometheus:v2.53.0
@@ -20,7 +55,8 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     depends_on:
-      - demo
+      - demo-a
+      - demo-b
 
   grafana:
     image: grafana/grafana:11.1.0
@@ -35,3 +71,6 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
+
+volumes:
+  mysql-data:
