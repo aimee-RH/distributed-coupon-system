@@ -50,10 +50,4 @@ The first request returns `rolled_back`. The same user can then redeem successfu
 - The model checks a narrow set of state transitions and metric definitions. It does not establish multi-node consistency, reliable message delivery, or production throughput.
 - Any performance claim needs the machine, dataset, test duration, success criteria, P95/P99, errors, and dropped requests. Fast HTTP acceptance alone does not establish fast asynchronous delivery.
 
-## Questions I can answer in an interview
 
-**Redis reserved stock, but the database write failed. What happens?** Release the reservation after a confirmed rollback. If the commit outcome is unknown, retain the reservation evidence and reconcile before releasing it.
-
-**Why track progress during bulk distribution?** A large input may be interrupted. A saved row number helps resume work, while uniqueness constraints, failure records, and reconciliation handle gaps between progress, messages, and committed coupons.
-
-**How do we know the system is correct?** Monitor inventory, issued coupons, duplicate attempts, reservation compensation, and reconciliation gaps alongside latency and throughput.
