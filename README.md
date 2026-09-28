@@ -20,6 +20,7 @@ The diagram is the **target-system design**, based on the project analysis. The 
 | Cross-instance stock safety | [Redemption design](docs/redeem.md), [Lua reservation](demo/reserve.lua), [database schema](demo/init.sql) | Redis fast rejection plus a conditional database stock update and a unique issued-coupon record |
 | Failure recovery | [Failure experiment](docs/experiment.md) | Compensation only after confirmed rollback; the same request resolves across instances after a committed but uncertain response |
 | Operational visibility | [Observability](docs/observability.md), [dashboard](monitoring/dashboard.json) | Outcome rates, stock, issuance, latency, and reconciliation gaps |
+| Historical load-test evidence | [Performance evidence](docs/performance.md), [benchmark dashboard](monitoring/benchmark-dashboard.json) | Actual k6 rates, tail latency, dropped iterations, reconciliation, and MQ acceptance versus completed issuance |
 
 ## Run the two-instance experiment
 
@@ -32,7 +33,7 @@ python3 demo/verify.py
 
 The script exercises rollback and retry, an uncertain response after commit, duplicate-user rejection, and 50 concurrent requests split between both instances. It expects **18 issued and 32 sold-out** from the concurrent phase, following two earlier successful issuances. The final state must be 20 issued, zero stock in both stores, and zero reconciliation gaps. See the [scenario-by-scenario walkthrough](docs/experiment.md).
 
-Open [Grafana](http://127.0.0.1:3000) (admin / admin) for the **Coupon Redemption: Two Instances** dashboard, or [Prometheus](http://127.0.0.1:9090). Instance A listens on 127.0.0.1:8080; instance B on 127.0.0.1:28081. The demo credentials and ports are local-only. To repeat from a clean database and Redis state:
+Open [Grafana](http://127.0.0.1:3000) (admin / admin) for the live **Coupon Redemption: Two Instances** dashboard and the separate [Coupon Benchmarks: Historical Evidence](http://127.0.0.1:3000/d/coupon-benchmark-evidence) dashboard, or [Prometheus](http://127.0.0.1:9090). Instance A listens on 127.0.0.1:8080; instance B on 127.0.0.1:28081. The demo credentials and ports are local-only. To repeat from a clean database and Redis state:
 
 ~~~sh
 docker compose down -v

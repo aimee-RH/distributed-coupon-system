@@ -1,0 +1,513 @@
+{
+  "uid": "coupon-benchmark-evidence",
+  "title": "Coupon Benchmarks: Historical Evidence",
+  "tags": [
+    "coupon",
+    "benchmark",
+    "historical"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Read this first",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Historical local k6 results, recorded 2026-09-16.** These gauges are fixed snapshots, not a live load test or production SLO. Mac ARM 16 GiB / 10 CPU, Colima 4 CPU / 4 GiB, one hot coupon and warm cache. The synchronous HTTP response includes issuance; the MQ HTTP response measures **acceptance only**. Run outcomes and limits: [performance evidence](https://github.com/aimee-RH/distributed-coupon-system/blob/main/docs/performance.md).",
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "bargauge",
+      "title": "Target vs achieved HTTP requests / second",
+      "description": "Observed throughput counts completed HTTP requests over the measured duration. Configured arrival rate is not achieved throughput.",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "coupon_benchmark_target_requests_per_second",
+          "legendFormat": "{{scenario}} target",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "coupon_benchmark_observed_requests_per_second",
+          "legendFormat": "{{scenario}} observed",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5B8DEF"
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Synchronous HTTP P99",
+      "description": "Exploratory target was below 200 ms. The repeat run failed despite matching the first run's configured 100 rps.",
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "coupon_benchmark_http_p99_seconds{path=\"sync\"} * 1000",
+          "legendFormat": "{{scenario}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 200
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 4,
+      "type": "bargauge",
+      "title": "Synchronous HTTP P99.9",
+      "description": "Exploratory target was below 500 ms, not a production SLO.",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "coupon_benchmark_http_p999_seconds{path=\"sync\"} * 1000",
+          "legendFormat": "{{scenario}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Dropped iterations: requests never sent",
+      "description": "Dropped iterations are excluded from HTTP success counts; zero unexpected errors among sent requests does not mean the offered load was handled.",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "coupon_benchmark_dropped_iterations",
+          "legendFormat": "{{scenario}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "Correctness probes: attempts vs issued",
+      "description": "Oversell and duplicate scenarios deliberately reject most requests. Their HTTP QPS is not issuance capacity.",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "coupon_benchmark_http_requests{scenario=~\"oversell|duplicate\"}",
+          "legendFormat": "{{scenario}} attempts",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "coupon_benchmark_issued_coupons{scenario=~\"oversell|duplicate\"}",
+          "legendFormat": "{{scenario}} issued",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5B8DEF"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Final inventory reconciliation (1 = passed)",
+      "description": "After each run settled, issued coupons and Redis/MySQL remaining stock reconciled. This is a recorded observation, not a live audit.",
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "coupon_benchmark_reconciled",
+          "legendFormat": "{{scenario}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 8,
+      "type": "text",
+      "title": "MQ acceptance is not completed issuance",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "The MQ run accepted **3,001** HTTP requests. The first post-run audit found **848** coupons committed; a later reconciliation reached **3,001** after about **22.9 seconds of polling**. That duration includes audit queries and is **not** a per-request delivery percentile.",
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "MQ HTTP acceptance P99 / P99.9",
+      "description": "These are queue-acceptance response times only.",
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "coupon_benchmark_http_p99_seconds{path=\"mq\"} * 1000",
+          "legendFormat": "P99 acceptance",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "coupon_benchmark_http_p999_seconds{path=\"mq\"} * 1000",
+          "legendFormat": "P99.9 acceptance",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "MQ first audit vs final issued",
+      "description": "Two observations of committed coupons after the queue-acceptance test.",
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "coupon_benchmark_mq_first_audit_issued",
+          "legendFormat": "First audit issued",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "coupon_benchmark_issued_coupons{scenario=\"mq-100\"}",
+          "legendFormat": "Final issued",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "MQ polling drain time",
+      "description": "Includes audit query time; not a per-request completion latency.",
+      "gridPos": {
+        "x": 20,
+        "y": 34,
+        "w": 4,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "coupon_benchmark_mq_drain_seconds",
+          "legendFormat": "seconds",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 12,
+      "type": "text",
+      "title": "Settlement comparison: measurements still needed",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "The r\u00e9sum\u00e9 describes **Redis Pipeline improving template reads by more than 2\u00d7** and a **synchronous settlement calculation about 20% faster than the multithreaded version**. No matching raw JMeter results were found in this workspace, so this dashboard does not present those percentages as measured facts. To add them, compare the same coupon counts and rules on the same machine, report completed throughput, P95/P99, errors, and the calculation result, then publish the raw summary and methodology.",
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        }
+      }
+    }
+  ]
+}

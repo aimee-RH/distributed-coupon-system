@@ -27,3 +27,8 @@ The fault named after_commit deliberately returns an uncertain response **after*
 For bulk distribution, record input rows accepted, messages published, rows attempted, coupons committed, failed rows, and oldest pending task age separately. A row checkpoint is not a delivery counter. For reminders, record scheduled, consumed, suppressed, retried, and delivered outcomes. Across modules, propagate a business request ID in logs and traces; keep user IDs, request IDs, and campaign IDs **out of Prometheus labels** to avoid unbounded cardinality.
 
 This lab uses a small SCAN-based reservation count, appropriate only for a tiny demo. A production reconciliation job should compute scoped counts from durable records and bounded Redis evidence without scanning an entire hot keyspace on each scrape. The [dashboard](../monitoring/dashboard.json) and [alert rules](../monitoring/alerts.yml) are reviewable source files.
+
+
+## Historical performance dashboard
+
+The separate [benchmark dashboard](../monitoring/benchmark-dashboard.json) uses fixed, dated k6 observations. Its performance bars are **not** derived from this small live lab. Read the [measurement notes](performance.md) before citing them: the 300/s run and 60-second repeat failed their latency and dropped-iteration gates, and the MQ latency only measures HTTP acceptance.

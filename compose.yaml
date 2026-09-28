@@ -67,6 +67,7 @@ services:
     volumes:
       - ./monitoring/grafana:/etc/grafana/provisioning:ro
       - ./monitoring/dashboard.json:/var/lib/grafana/dashboards/coupon.json:ro
+      - ./monitoring/benchmark-dashboard.json:/var/lib/grafana/dashboards/benchmark.json:ro
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:

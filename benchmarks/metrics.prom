@@ -1,0 +1,65 @@
+# Historical local k6 snapshots from 2026-09-16. Repeated scrapes do not mean new test runs.
+# Single hot coupon; warm cache; Mac ARM 16 GiB / 10 CPU; Colima 4 CPU / 4 GiB.
+# HELP coupon_benchmark_snapshot_info Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_snapshot_info gauge
+coupon_benchmark_snapshot_info{date="2026-09-16",source="local-k6"} 1
+# HELP coupon_benchmark_target_requests_per_second Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_target_requests_per_second gauge
+coupon_benchmark_target_requests_per_second{scenario="sync-100",path="sync"} 100
+coupon_benchmark_target_requests_per_second{scenario="sync-300",path="sync"} 300
+coupon_benchmark_target_requests_per_second{scenario="sync-100-repeat",path="sync"} 100
+coupon_benchmark_target_requests_per_second{scenario="mq-100",path="mq"} 100
+# HELP coupon_benchmark_observed_requests_per_second Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_observed_requests_per_second gauge
+coupon_benchmark_observed_requests_per_second{scenario="sync-100",path="sync"} 99.99
+coupon_benchmark_observed_requests_per_second{scenario="sync-300",path="sync"} 127.12
+coupon_benchmark_observed_requests_per_second{scenario="sync-100-repeat",path="sync"} 88.15
+coupon_benchmark_observed_requests_per_second{scenario="mq-100",path="mq"} 100.02
+# HELP coupon_benchmark_http_p99_seconds Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_http_p99_seconds gauge
+coupon_benchmark_http_p99_seconds{scenario="sync-100",path="sync",scope="issuance_response"} 0.18894
+coupon_benchmark_http_p99_seconds{scenario="sync-300",path="sync",scope="issuance_response"} 3.06204
+coupon_benchmark_http_p99_seconds{scenario="sync-100-repeat",path="sync",scope="issuance_response"} 3.76948
+coupon_benchmark_http_p99_seconds{scenario="mq-100",path="mq",scope="acceptance_only"} 0.02864
+# HELP coupon_benchmark_http_p999_seconds Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_http_p999_seconds gauge
+coupon_benchmark_http_p999_seconds{scenario="sync-100",path="sync",scope="issuance_response"} 0.24080
+coupon_benchmark_http_p999_seconds{scenario="sync-300",path="sync",scope="issuance_response"} 4.17680
+coupon_benchmark_http_p999_seconds{scenario="sync-100-repeat",path="sync",scope="issuance_response"} 5.41090
+coupon_benchmark_http_p999_seconds{scenario="mq-100",path="mq",scope="acceptance_only"} 0.05080
+# HELP coupon_benchmark_http_requests Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_http_requests gauge
+coupon_benchmark_http_requests{scenario="sync-100"} 3001
+coupon_benchmark_http_requests{scenario="sync-300"} 4007
+coupon_benchmark_http_requests{scenario="sync-100-repeat"} 5450
+coupon_benchmark_http_requests{scenario="mq-100"} 3001
+coupon_benchmark_http_requests{scenario="oversell"} 501
+coupon_benchmark_http_requests{scenario="duplicate"} 500
+# HELP coupon_benchmark_issued_coupons Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_issued_coupons gauge
+coupon_benchmark_issued_coupons{scenario="sync-100"} 3001
+coupon_benchmark_issued_coupons{scenario="sync-300"} 4007
+coupon_benchmark_issued_coupons{scenario="sync-100-repeat"} 5450
+coupon_benchmark_issued_coupons{scenario="mq-100"} 3001
+coupon_benchmark_issued_coupons{scenario="oversell"} 100
+coupon_benchmark_issued_coupons{scenario="duplicate"} 1
+# HELP coupon_benchmark_dropped_iterations Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_dropped_iterations gauge
+coupon_benchmark_dropped_iterations{scenario="sync-100"} 0
+coupon_benchmark_dropped_iterations{scenario="sync-300"} 4993
+coupon_benchmark_dropped_iterations{scenario="sync-100-repeat"} 550
+coupon_benchmark_dropped_iterations{scenario="mq-100"} 0
+# HELP coupon_benchmark_reconciled Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_reconciled gauge
+coupon_benchmark_reconciled{scenario="sync-100"} 1
+coupon_benchmark_reconciled{scenario="sync-300"} 1
+coupon_benchmark_reconciled{scenario="sync-100-repeat"} 1
+coupon_benchmark_reconciled{scenario="mq-100"} 1
+coupon_benchmark_reconciled{scenario="oversell"} 1
+coupon_benchmark_reconciled{scenario="duplicate"} 1
+# HELP coupon_benchmark_mq_first_audit_issued Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_mq_first_audit_issued gauge
+coupon_benchmark_mq_first_audit_issued{scenario="mq-100"} 848
+# HELP coupon_benchmark_mq_drain_seconds Fixed observation from the 2026-09-16 local k6 run.
+# TYPE coupon_benchmark_mq_drain_seconds gauge
+coupon_benchmark_mq_drain_seconds{scenario="mq-100"} 22.9

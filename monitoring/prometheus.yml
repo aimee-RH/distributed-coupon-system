@@ -8,3 +8,7 @@ scrape_configs:
   - job_name: coupon-demo
     static_configs:
       - targets: ["demo-a:8080", "demo-b:8080"]
+  - job_name: coupon-benchmark-snapshot
+    metrics_path: /benchmark-metrics
+    static_configs:
+      - targets: ["demo-a:8080"]

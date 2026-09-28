@@ -17,6 +17,7 @@ STOCK_KEY = "demo:coupon:1:stock"
 USER_KEY = "demo:coupon:1:user:"
 RESERVE = Path(__file__).with_name("reserve.lua").read_text()
 RELEASE = Path(__file__).with_name("release.lua").read_text()
+BENCHMARK_METRICS = Path(__file__).parents[1].joinpath("benchmarks", "metrics.prom").read_text()
 VALID_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -183,6 +184,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == "/metrics":
                 self.respond(200, service.metrics.render(service.state()), "text/plain; version=0.0.4")
+            elif self.path == "/benchmark-metrics":
+                self.respond(200, BENCHMARK_METRICS, "text/plain; version=0.0.4")
             elif self.path == "/state":
                 self.respond(200, json.dumps(service.state()))
             elif self.path == "/health":
