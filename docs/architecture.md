@@ -1,5 +1,7 @@
 # Architecture: Four Workflows and Their Failure Boundaries
 
+![Original system architecture showing six service modules](../assets/system-architecture.svg)
+
 The target platform separates merchant configuration, background issuance, interactive redemption, and checkout. Each workflow has a different success definition. A task accepted by the admin API is not a coupon delivered to a user; a Redis reservation is not a database issuance; a discount preview is not a consumed coupon.
 
 ## Ownership map

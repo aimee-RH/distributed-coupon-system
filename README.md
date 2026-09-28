@@ -2,6 +2,16 @@
 
 An independent, interview-ready study of a distributed coupon platform. The diagrams explain the larger system; the runnable lab isolates its hardest interactive path: **two redemption instances sharing Redis and MySQL**. It does not contain source code from the private learning project, and the lab is not a complete coupon platform.
 
+## System at a glance
+
+![Original diagram of the six coupon service modules and shared infrastructure](assets/system-architecture.svg)
+
+The four-step animation below follows campaign setup, bulk issuance, safe redemption, and outcome verification. It is an illustrative workflow, not a recording of the runnable lab.
+
+![Four-step coupon workflow animation](assets/workflow.gif)
+
+The diagram is the **target-system design**, based on the project analysis. The runnable lab implements only the redemption slice with Redis, MySQL, two HTTP instances, Prometheus, and Grafana. Bulk distribution, RocketMQ, scheduled reminders, sharding, and checkout are explained as design cases rather than presented as running features.
+
 ## Start with the evidence
 
 | Design focus | Where to look | What you can verify |
@@ -29,24 +39,5 @@ docker compose down -v
 docker compose up -d --build
 python3 demo/verify.py
 ~~~
-
-## System at a glance
-
-~~~mermaid
-flowchart LR
-  Merchant --> Admin[Merchant Admin]
-  Admin --> MQ[RocketMQ]
-  MQ --> Distribution[Distribution workers]
-  Customer --> Gateway[Gateway]
-  Gateway --> Engine[Coupon Engine]
-  Gateway --> Settlement[Settlement]
-  Engine --> Redis[(Redis)]
-  Distribution --> MySQL[(MySQL)]
-  Engine --> MySQL
-  Settlement --> Redis
-  Settlement --> MySQL
-~~~
-
-The diagram is the **target-system design**, based on the project analysis. The runnable lab implements only the redemption slice with Redis, MySQL, two HTTP instances, Prometheus, and Grafana. Bulk distribution, RocketMQ, scheduled reminders, sharding, and checkout are explained as design cases rather than presented as running features.
 
 This repository makes **no throughput claim**. A credible benchmark would publish machine specifications, workload and data shape, warm-up, test duration, offered and completed request rates, P95/P99, error counts, and the final inventory reconciliation result.
